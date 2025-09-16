@@ -1,0 +1,137 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id    String @id @default(uuid())
+  email String @unique
+  name  String?
+
+  // Relations
+  lifeAreas       LifeArea[]
+  goals           Goal[]
+  weeklyTasks     WeeklyTask[]
+  weeklyFocuses   WeeklyFocusTheme[]
+  signals         Signal[]
+
+  @@map("users")
+}
+
+model LifeArea {
+  id       String  @id @default(uuid())
+  name     String
+  nameNorm String? @db.Text // Computed as lower(btrim(name)) - handled by database
+  color    String?
+  order    Int
+  vision   String?
+  strategy String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relations
+  goals Goal[]
+
+  // Composite unique constraints per Domain v1.3 (case-insensitive)
+  @@unique([userId, nameNorm]) // Unique life area names per user (case-insensitive via DB)
+  @@unique([userId, order]) // Unique order numbers per user
+
+  @@map("life_areas")
+}
+
+model Goal {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  horizon     String    // YEAR, SIX_MONTH, MONTH, WEEK
+  status      String    // active, paused, done
+  targetDate  DateTime?
+
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lifeAreaId String?
+  lifeArea   LifeArea? @relation(fields: [lifeAreaId], references: [id], onDelete: SetNull)
+
+  // Relations
+  weeklyTasks           WeeklyTask[]
+  weeklyFocusThemeGoals WeeklyFocusThemeGoal[]
+
+  @@map("goals")
+}
+
+model WeeklyTask {
+  id        String   @id @default(uuid())
+  title     String
+  titleNorm String?  @db.Text // Computed as lower(btrim(title)) - handled by database
+  weekStart DateTime // Date only, must be Monday
+  monday    Boolean  @default(false)
+  tuesday   Boolean  @default(false)
+  wednesday Boolean  @default(false)
+  thursday  Boolean  @default(false)
+  friday    Boolean  @default(false)
+  saturday  Boolean  @default(false)
+  sunday    Boolean  @default(false)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goalId String?
+  goal   Goal?  @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  // Composite unique constraint per Domain v1.3 (case-insensitive)
+  @@unique([userId, weekStart, titleNorm]) // Unique task titles per user per week (case-insensitive via DB)
+
+  @@map("weekly_tasks")
+}
+
+model WeeklyFocusTheme {
+  id        String   @id @default(uuid())
+  title     String
+  note      String?
+  weekStart DateTime // Date only, must be Monday
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relations to goals (many-to-many through join table)
+  linkedGoals WeeklyFocusThemeGoal[]
+
+  // Composite unique constraint per Domain v1.3
+  @@unique([userId, weekStart]) // One focus theme per user per week
+
+  @@map("weekly_focus_themes")
+}
+
+// Join table for WeeklyFocusTheme -> Goal many-to-many relationship
+model WeeklyFocusThemeGoal {
+  weeklyFocusThemeId String
+  goalId             String
+
+  weeklyFocusTheme WeeklyFocusTheme @relation(fields: [weeklyFocusThemeId], references: [id], onDelete: Cascade)
+  goal             Goal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@id([weeklyFocusThemeId, goalId])
+  @@map("weekly_focus_theme_goals")
+}
+
+model Signal {
+  id    String   @id @default(uuid())
+  type  String   // SLEEP, WELLBEING
+  date  DateTime // Date only
+  value Float
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Composite unique constraint per Domain v1.3
+  @@unique([userId, date, type]) // One signal entry per user per date per type
+
+  @@map("signals")
+}
